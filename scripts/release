@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+tap_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+projects_dir="${PROJECTS_DIR:-$HOME/projects}"
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/release <name> <version>
+
+Publishes a GitHub release of <name> tagged v<version>, then points the tap at it.
+
+Formulas (built by Homebrew from the tagged source):
+  wallctl, dux
+
+Casks (built here from ~/projects/<name>, which must match origin's default branch):
+  perch, tally, ente-menubar
+USAGE
+}
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+if [[ $# -ne 2 ]]; then
+  usage >&2
+  exit 64
+fi
+
+name="$1"
+version="${2#v}"
+tag="v$version"
+
+case "$name" in
+  wallctl | dux)
+    kind=formula
+    repo="toommyliu/$name"
+    file="$tap_dir/Formula/$name.rb"
+    ;;
+  perch)
+    kind=cask
+    repo=toommyliu/Perch
+    app=Perch
+    ;;
+  tally)
+    kind=cask
+    repo=toommyliu/Tally
+    app=Tally
+    ;;
+  ente-menubar)
+    kind=cask
+    repo=toommyliu/ente-menubar
+    app=EnteMenubar
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 64
+    ;;
+esac
+
+if [[ "$kind" == cask ]]; then
+  file="$tap_dir/Casks/$name.rb"
+  src="$projects_dir/$name"
+fi
+
+for tool in gh git shasum curl; do
+  command -v "$tool" >/dev/null 2>&1 || die "$tool is not on PATH"
+done
+
+[[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || die "version must look like 1.2.3, got '$2'"
+[[ -z "$(git -C "$tap_dir" status --porcelain)" ]] || die "the tap has uncommitted changes"
+gh release view "$tag" --repo "$repo" >/dev/null 2>&1 && die "$repo already has a $tag release"
+
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/tap-release.XXXXXX")"
+trap 'rm -rf "$work_dir"' EXIT
+
+newest_zip_since() {
+  local dir="$1" marker="$2" zip
+  zip="$(find "$dir" -maxdepth 1 -name "$app-*.zip" -newer "$marker" -print | tail -n 1)"
+  [[ -n "$zip" ]] || die "the build finished but left no new $app zip in $dir"
+  printf '%s\n' "$zip"
+}
+
+build_cask_zip() {
+  local zip="$1" marker="$work_dir/marker" app_path
+
+  touch "$marker"
+  case "$name" in
+    perch)
+      (cd "$src" && ./scripts/perch artifact)
+      ditto "$(newest_zip_since "$src/build/artifacts" "$marker")" "$zip"
+      ;;
+    tally)
+      (cd "$src" && ./scripts/artifact.sh release)
+      ditto "$(newest_zip_since "$src/build/artifacts" "$marker")" "$zip"
+      ;;
+    ente-menubar)
+      app_path="$(cd "$src" && ./scripts/app.sh | tail -n 1)"
+      [[ -d "$app_path" ]] || die "ente-menubar build did not produce $app_path"
+      ditto -c -k --keepParent "$app_path" "$zip"
+      ;;
+  esac
+}
+
+if [[ "$kind" == formula ]]; then
+  echo "Creating $repo $tag from the default branch..."
+  gh release create "$tag" --repo "$repo" --title "$tag" --generate-notes
+
+  tarball="$work_dir/source.tar.gz"
+  curl -fsSL "https://github.com/$repo/archive/refs/tags/$tag.tar.gz" -o "$tarball"
+  sha="$(shasum -a 256 "$tarball" | cut -d ' ' -f 1)"
+
+  sed -E -i '' "s|(archive/refs/tags/)v[^\"]+(\\.tar\\.gz)|\\1$tag\\2|" "$file"
+  expected="tags/$tag.tar.gz"
+else
+  [[ -d "$src/.git" ]] || die "$src is not a git checkout"
+  git -C "$src" fetch --quiet origin
+  default_branch="$(git -C "$src" symbolic-ref --quiet --short refs/remotes/origin/HEAD || echo origin/main)"
+  [[ -z "$(git -C "$src" status --porcelain)" ]] || die "$src has uncommitted or untracked files"
+  head_sha="$(git -C "$src" rev-parse HEAD)"
+  [[ "$head_sha" == "$(git -C "$src" rev-parse "$default_branch")" ]] ||
+    die "$src HEAD is not at $default_branch; check it out and pull first"
+
+  zip="$work_dir/$app-$version.zip"
+  echo "Building $app at ${head_sha:0:7}..."
+  build_cask_zip "$zip"
+  sha="$(shasum -a 256 "$zip" | cut -d ' ' -f 1)"
+
+  echo "Creating $repo $tag..."
+  gh release create "$tag" "$zip" --repo "$repo" --target "$head_sha" --title "$tag" --generate-notes
+
+  sed -E -i '' "s|^  version \"[^\"]+\"|  version \"$version\"|" "$file"
+  expected="version \"$version\""
+fi
+
+sed -E -i '' "s|^  sha256 \"[0-9a-f]+\"|  sha256 \"$sha\"|" "$file"
+grep -qF "$expected" "$file" || die "could not update the version in $file"
+grep -qF "$sha" "$file" || die "could not update the sha256 in $file"
+
+git -C "$tap_dir" commit --quiet -m "$name $version" -- "$file"
+git -C "$tap_dir" push --quiet
+
+echo "Released $name $version. Run 'brew update && brew upgrade toommyliu/tap/$name' to install it."
