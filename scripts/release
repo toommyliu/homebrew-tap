@@ -142,7 +142,7 @@ sed -E -i '' "s|^  sha256 \"[0-9a-f]+\"|  sha256 \"$sha\"|" "$file"
 grep -qF "$expected" "$file" || die "could not update the version in $file"
 grep -qF "$sha" "$file" || die "could not update the sha256 in $file"
 
-git -C "$tap_dir" commit --quiet -m "$name $version" -- "$file"
+git -C "$tap_dir" commit --quiet -m "feat($name): update to $version" -- "$file"
 git -C "$tap_dir" push --quiet
 
 echo "Released $name $version. Run 'brew update && brew upgrade toommyliu/tap/$name' to install it."
