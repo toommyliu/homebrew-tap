@@ -2,7 +2,7 @@ class Dux < Formula
   desc "Fast disk usage explorer for understanding what is taking space"
   homepage "https://github.com/toommyliu/dux"
   url "https://github.com/toommyliu/dux/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "8e15cf238b5c52d38b0da6fbf4289c52b8a03fce447c3b75c8614c713f402608"
   license "MIT"
   head "https://github.com/toommyliu/dux.git", branch: "main"
 
