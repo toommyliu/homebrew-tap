@@ -1,6 +1,6 @@
 cask "ente-menubar" do
   version "1.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "ec7def9391912aa7183e038b5cba55ed364b8046d913fd3a390da05bf525f33e"
 
   url "https://github.com/toommyliu/ente-menubar/releases/download/v#{version}/EnteMenubar-#{version}.zip"
   name "Ente Auth Menubar"
