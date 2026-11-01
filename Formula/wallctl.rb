@@ -2,7 +2,7 @@ class Wallctl < Formula
   desc "Wallpaper profile controller for macOS"
   homepage "https://github.com/toommyliu/wallctl"
   url "https://github.com/toommyliu/wallctl/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "33ac29c5c664d11dc4a5ddb6efaf84b8786fc31b836a79f303f3f62c5688789a"
   license "MIT"
   head "https://github.com/toommyliu/wallctl.git", branch: "main"
 
